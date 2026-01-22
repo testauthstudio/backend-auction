@@ -1,0 +1,126 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Auction</title>
+    <style>
+      body { font-family: system-ui, sans-serif; max-width: 900px; margin: 24px auto; padding: 0 12px; }
+      input, button { padding: 8px; }
+      .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+      .card { border: 1px solid #ddd; border-radius: 10px; padding: 12px; margin: 10px 0; }
+      .muted { color: #666; }
+      table { width: 100%; border-collapse: collapse; }
+      td, th { padding: 6px; border-bottom: 1px solid #eee; text-align: left; }
+      code { background: #f4f4f4; padding: 2px 6px; border-radius: 6px; }
+    </style>
+  </head>
+  <body>
+    <p><a href="/">&larr; Back</a></p>
+    <h1 id="title">Auction</h1>
+    <div class="card">
+      <div class="row">
+        <div>Status: <b id="status"></b></div>
+        <div>Round: <b id="round"></b></div>
+        <div>Ends in: <b id="endsIn"></b></div>
+        <div>Assigned: <b id="assigned"></b></div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <input id="userId" placeholder="userId" style="min-width: 320px" />
+        <input id="amount" type="number" placeholder="amount (cents)" />
+        <button id="bidBtn">Bid / Raise</button>
+        <span id="bidOut" class="muted"></span>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button id="startBtn">Start auction</button>
+        <span class="muted">Start only works while status=<code>draft</code></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Top bids</h3>
+      <table>
+        <thead>
+          <tr><th>User</th><th>Amount</th><th>Status</th><th>Serial</th><th>Updated</th></tr>
+        </thead>
+        <tbody id="bids"></tbody>
+      </table>
+    </div>
+
+    <script>
+      const qs = new URLSearchParams(location.search);
+      const auctionId = qs.get("id");
+      if (!auctionId) { alert("Missing ?id="); }
+
+      const $ = (id) => document.getElementById(id);
+
+      async function api(path, opts={}) {
+        const res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "Request failed");
+        return data;
+      }
+
+      function fmtMs(ms) {
+        if (ms <= 0) return "0s";
+        const s = Math.floor(ms/1000);
+        const m = Math.floor(s/60);
+        const r = s % 60;
+        return m > 0 ? `${m}m ${r}s` : `${r}s`;
+      }
+
+      let lastAuction = null;
+
+      async function refresh() {
+        const a = await api(`/api/auctions/${auctionId}`);
+        lastAuction = a;
+        $("title").textContent = a.title + " (" + auctionId + ")";
+        $("status").textContent = a.status;
+        $("round").textContent = a.currentRound;
+        $("assigned").textContent = `${a.itemsAssigned}/${a.totalItems}`;
+
+        const endsAt = a.roundEndsAt ? new Date(a.roundEndsAt).getTime() : null;
+        const ms = endsAt ? endsAt - Date.now() : null;
+        $("endsIn").textContent = endsAt ? fmtMs(ms) : "-";
+
+        const bids = await api(`/api/auctions/${auctionId}/bids?limit=50`);
+        $("bids").innerHTML = bids.map(b =>
+          `<tr>
+            <td>${b.userId}</td>
+            <td>${b.amount}</td>
+            <td>${b.status}</td>
+            <td>${b.wonSerial ?? ""}</td>
+            <td class="muted">${new Date(b.updatedAt).toLocaleString()}</td>
+          </tr>`
+        ).join("");
+      }
+
+      $("bidBtn").onclick = async () => {
+        $("bidOut").textContent = "";
+        try {
+          const userId = $("userId").value.trim();
+          const amount = Number($("amount").value);
+          const b = await api(`/api/auctions/${auctionId}/bid`, {
+            method: "POST",
+            body: JSON.stringify({ userId, amount })
+          });
+          $("bidOut").textContent = "OK";
+          await refresh();
+        } catch (e) {
+          $("bidOut").textContent = e.message;
+        }
+      };
+
+      $("startBtn").onclick = async () => {
+        try {
+          await api(`/api/auctions/${auctionId}/start`, { method: "POST" });
+          await refresh();
+        } catch (e) {
+          alert(e.message);
+        }
+      };
+
+      refresh();
+      setInterval(refresh, 1000);
+    </script>
+  </body>
+</html>
