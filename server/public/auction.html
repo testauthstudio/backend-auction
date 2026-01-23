@@ -1,0 +1,196 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Auction</title>
+    <style>
+      body { font-family: system-ui, sans-serif; max-width: 900px; margin: 24px auto; padding: 0 12px; }
+      input, button { padding: 8px; }
+      .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+      .card { border: 1px solid #ddd; border-radius: 10px; padding: 12px; margin: 10px 0; }
+      .muted { color: #666; }
+      table { width: 100%; border-collapse: collapse; }
+      td, th { padding: 6px; border-bottom: 1px solid #eee; text-align: left; }
+      code { background: #f4f4f4; padding: 2px 6px; border-radius: 6px; }
+    </style>
+  </head>
+  <body>
+    <p><a href="/">&larr; Back</a></p>
+    <h1 id="title">Auction</h1>
+    <div class="card">
+      <div class="row">
+        <div>Status: <b id="status"></b></div>
+        <div>Round: <b id="round"></b></div>
+        <div>Ends in: <b id="endsIn"></b></div>
+        <div>Assigned: <b id="assigned"></b></div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <label style="min-width: 260px">
+          <span class="muted">User</span><br />
+          <select id="userSelect" style="width: 100%"></select>
+        </label>
+        <label>
+          <span class="muted">Bid amount (cents)</span><br />
+          <input id="amount" type="number" placeholder="e.g. 100" />
+        </label>
+        <button id="bidBtn">Bid / Raise</button>
+        <span id="bidOut" class="muted"></span>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button id="startBtn">Start auction</button>
+        <span class="muted">Start only works while status=<code>draft</code></span>
+      </div>
+
+      <div class="row" style="margin-top:10px">
+        <button id="botStormBtn">Bot bid storm</button>
+        <label>
+          <span class="muted">Bots count</span><br />
+          <input id="botCount" type="number" value="20" min="1" style="width: 120px" />
+        </label>
+        <span id="botOut" class="muted"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Top bids</h3>
+      <table>
+        <thead>
+          <tr><th>User</th><th>Amount</th><th>Status</th><th>Serial</th><th>Updated</th></tr>
+        </thead>
+        <tbody id="bids"></tbody>
+      </table>
+    </div>
+
+    <script>
+      const qs = new URLSearchParams(location.search);
+      const auctionId = qs.get("id");
+      if (!auctionId) { alert("Missing ?id="); }
+
+      const $ = (id) => document.getElementById(id);
+      const userSelect = $("userSelect");
+      const userInfo = $("userInfo");
+
+      async function api(path, opts={}) {
+        const res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "Request failed");
+        return data;
+      }
+
+      function fmtMs(ms) {
+        if (ms <= 0) return "0s";
+        const s = Math.floor(ms/1000);
+        const m = Math.floor(s/60);
+        const r = s % 60;
+        return m > 0 ? `${m}m ${r}s` : `${r}s`;
+      }
+
+      let lastAuction = null;
+
+      // ---- Demo users (5) ----
+      async function loadUsers() {
+        // make sure demo users exist
+        await api("/api/users/seed", { method: "POST" }).catch(() => {});
+        const users = await api("/api/users");
+
+        userSelect.innerHTML = users
+          .map((u) => `<option value="${u._id}">${u.nickname}</option>`)
+          .join("");
+
+        const saved = localStorage.getItem("activeUserId");
+        if (saved && users.some((u) => u._id === saved)) {
+          userSelect.value = saved;
+        } else if (users[0]) {
+          userSelect.value = users[0]._id;
+          localStorage.setItem("activeUserId", users[0]._id);
+        }
+
+        userSelect.addEventListener("change", () => {
+          localStorage.setItem("activeUserId", userSelect.value);
+          updateUserInfo(users);
+        });
+
+        updateUserInfo(users);
+      }
+
+      function updateUserInfo(users) {
+        const current = users.find((u) => u._id === userSelect.value);
+        const nick = current ? current.nickname : "—";
+        const avail = current ? current.balanceAvailable : 0;
+        const locked = current ? current.balanceLocked : 0;
+        userInfo.textContent = `Selected: ${nick} · available: ${avail} · locked: ${locked}`;
+      }
+
+      async function refresh() {
+        const a = await api(`/api/auctions/${auctionId}`);
+        lastAuction = a;
+        $("title").textContent = a.title + " (" + auctionId + ")";
+        $("status").textContent = a.status;
+        $("round").textContent = a.currentRound;
+        $("assigned").textContent = `${a.itemsAssigned}/${a.totalItems}`;
+
+        const endsAt = a.roundEndsAt ? new Date(a.roundEndsAt).getTime() : null;
+        const ms = endsAt ? endsAt - Date.now() : null;
+        $("endsIn").textContent = endsAt ? fmtMs(ms) : "-";
+
+        const bids = await api(`/api/auctions/${auctionId}/bids?limit=50`);
+        $("bids").innerHTML = bids.map(b => {
+          const u = b.userId;
+          const who = typeof u === "string" ? u : (u?.nickname ?? "(unknown)");
+          return `<tr>
+            <td>${who}</td>
+            <td>${b.amount}</td>
+            <td>${b.status}</td>
+            <td>${b.wonSerial ?? ""}</td>
+            <td class="muted">${new Date(b.updatedAt).toLocaleString()}</td>
+          </tr>`
+        }).join("");
+      }
+
+      $("bidBtn").onclick = async () => {
+        $("bidOut").textContent = "";
+        try {
+          const userId = userSelect.value;
+          const amount = Number($("amount").value);
+          const b = await api(`/api/auctions/${auctionId}/bid`, {
+            method: "POST",
+            body: JSON.stringify({ userId, amount })
+          });
+          $("bidOut").textContent = "OK";
+          await refresh();
+        } catch (e) {
+          $("bidOut").textContent = e.message;
+        }
+      };
+
+      $("botStormBtn").onclick = async () => {
+        $("botStormOut").textContent = "";
+        try {
+          const count = Number($("botCount").value || 20);
+          const maxBid = Number($("botMaxBid").value || 5000);
+          const r = await api(`/api/auctions/${auctionId}/bot-storm`, {
+            method: "POST",
+            body: JSON.stringify({ count, maxBid })
+          });
+          $("botStormOut").textContent = `OK: ${r.ok}, errors: ${r.errors}`;
+          await refresh();
+        } catch (e) {
+          $("botStormOut").textContent = e.message;
+        }
+      };
+
+      $("startBtn").onclick = async () => {
+        try {
+          await api(`/api/auctions/${auctionId}/start`, { method: "POST" });
+          await refresh();
+        } catch (e) {
+          alert(e.message);
+        }
+      };
+
+      await loadUsers();
+      refresh();
+      setInterval(refresh, 1000);
+    </script>
+  </body>
+</html>

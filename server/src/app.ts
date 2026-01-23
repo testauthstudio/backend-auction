@@ -1,32 +1,35 @@
 import express from "express";
 import path from "path";
 import dotenv from "dotenv";
-import mongoose from "mongoose";
 
-import { usersRouter } from "./routes/users.js";
+import { connectDb } from "./db.js";
+import { usersRouter, ensureDefaultUsers } from "./routes/users.js";
 import { auctionsRouter } from "./routes/auctions.js";
+import { startRoundWorker } from "./worker/rounds.js";
 
 dotenv.config();
 
-const PORT = Number(process.env.PORT || 3000);
-const MONGO_URI = process.env.MONGO_URI!;
+const PORT = Number(process.env.PORT ?? 3000);
 
-// ⬇️ КЛЮЧЕВОЕ ИЗМЕНЕНИЕ
-const publicDir = path.join(process.cwd(), "public");
+// For local Docker usage we provide a safe default.
+// Compose sets MONGO_URI explicitly, but this makes the app runnable without env files.
+const MONGO_URI = String(
+  process.env.MONGO_URI ?? "mongodb://mongo:27017/auction?replicaSet=rs0"
+);
 
-async function connectMongo() {
-  try {
-    await mongoose.connect(MONGO_URI);
-    console.log("[db] connected");
-  } catch (e) {
-    console.error("[db] failed, retrying...");
-    setTimeout(connectMongo, 3000);
-  }
-}
+// IMPORTANT:
+// We run compiled JS from /app/dist/..., but static files are copied as /app/server/public.
+// Using process.cwd() makes this path stable in both dev and Docker.
+const publicDir = path.join(process.cwd(), "server", "public");
 
-async function main() {
+async function bootstrap() {
+  await connectDb(MONGO_URI);
+  console.log("[db] connected");
+
+  // Seed 5 demo users (id + nickname) once.
+  await ensureDefaultUsers();
+
   const app = express();
-
   app.use(express.json());
 
   app.get("/api/health", (_req, res) => res.json({ ok: true }));
@@ -34,26 +37,26 @@ async function main() {
   app.use("/api/users", usersRouter);
   app.use("/api/auctions", auctionsRouter);
 
-  // ✅ СТАТИКА
+  // UI
   app.use(express.static(publicDir));
+  app.get("/", (_req, res) => res.sendFile(path.join(publicDir, "index.html")));
 
-  app.get("/", (_req, res) => {
-    res.sendFile(path.join(publicDir, "index.html"));
-  });
+  // Background worker: settles rounds and advances auction state.
+  startRoundWorker();
 
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     console.log(`[app] listening on http://localhost:${PORT}`);
   });
 
-  connectMongo();
+  const shutdown = (signal: string) => {
+    console.log(`[process] ${signal}`);
+    server.close(() => process.exit(0));
+  };
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
 }
 
-process.on("SIGTERM", () => {
-  console.log("[process] SIGTERM");
+bootstrap().catch((err) => {
+  console.error("[fatal]", err);
+  process.exit(1);
 });
-
-process.on("SIGINT", () => {
-  console.log("[process] SIGINT");
-});
-
-main();

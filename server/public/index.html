@@ -1,0 +1,79 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Auction MVP</title>
+    <style>
+      body { font-family: system-ui, sans-serif; max-width: 900px; margin: 24px auto; padding: 0 12px; }
+      input, button { padding: 8px; }
+      .row { display: flex; gap: 8px; flex-wrap: wrap; }
+      .card { border: 1px solid #ddd; border-radius: 10px; padding: 12px; margin: 10px 0; }
+      .muted { color: #666; }
+      a { color: inherit; }
+      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
+      code { background: #f4f4f4; padding: 2px 6px; border-radius: 6px; }
+    </style>
+  </head>
+  <body>
+    <h1>Auction MVP</h1>
+    <p class="muted">Create an auction, start it, then bid. Amounts are <b>cents</b>.</p>
+
+    <div class="grid">
+      <div class="card">
+        <h3>Active user (demo)</h3>
+        <p class="muted">Pick one of 5 pre-created users. No manual ID typing.</p>
+        <div class="row">
+          <label>
+            <span class="muted">User</span><br />
+            <select id="activeUserSelect"></select>
+          </label>
+          <button id="seedUsersBtn" type="button">Reset demo users</button>
+          <a id="balanceLink" href="/balance.html">Open balance</a>
+        </div>
+        <p id="userOut" class="muted"></p>
+      </div>
+
+      <div class="card">
+        <h3>Create auction (draft)</h3>
+        <div class="row">
+          <label>
+            <span class="muted">Title</span><br />
+            <input id="title" placeholder="Title" value="Gift Auction" />
+          </label>
+          <label>
+            <span class="muted">Total items</span><br />
+            <input id="totalItems" type="number" value="20" />
+          </label>
+          <label>
+            <span class="muted">Items per round</span><br />
+            <input id="itemsPerRound" type="number" value="5" />
+          </label>
+          <label>
+            <span class="muted">Round duration (sec)</span><br />
+            <input id="roundDurationSec" type="number" value="60" />
+          </label>
+          <label>
+            <span class="muted">Anti-snipe window (sec)</span><br />
+            <input id="antiWindow" type="number" value="15" />
+          </label>
+          <label>
+            <span class="muted">Anti-snipe extend (sec)</span><br />
+            <input id="antiExtend" type="number" value="30" />
+          </label>
+          <label>
+            <span class="muted">Max extensions per round</span><br />
+            <input id="antiMax" type="number" value="3" />
+          </label>
+          <button id="createAuctionBtn">Create</button>
+        </div>
+        <p id="auctionOut" class="muted"></p>
+      </div>
+    </div>
+
+    <h2>Auctions</h2>
+    <div id="list"></div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

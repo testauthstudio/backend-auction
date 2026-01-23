@@ -1,0 +1,70 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Balance</title>
+    <style>
+      body { font-family: system-ui, sans-serif; max-width: 900px; margin: 24px auto; padding: 0 12px; }
+      input, button { padding: 8px; }
+      .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+      .card { border: 1px solid #ddd; border-radius: 10px; padding: 12px; margin: 10px 0; }
+      .muted { color: #666; }
+      code { background: #f4f4f4; padding: 2px 6px; border-radius: 6px; }
+    </style>
+  </head>
+  <body>
+    <p><a href="/">&larr; Back</a></p>
+    <h1>Balance</h1>
+
+    <div class="card">
+      <div class="row">
+        <label>
+          <span class="muted">User</span><br/>
+          <select id="userSelect"></select>
+        </label>
+        <button id="loadBtn">Load</button>
+      </div>
+      <p id="out" class="muted"></p>
+    </div>
+
+    <script>
+      const storageKey = "activeUserId";
+
+      async function api(path) {
+        const res = await fetch(path);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "Request failed");
+        return data;
+      }
+
+      async function loadUsers() {
+        await fetch("/api/users/seed", { method: "POST" });
+        const users = await api("/api/users");
+        const select = document.getElementById("userSelect");
+        select.innerHTML = users
+          .map((u) => `<option value="${u._id}">${u.nickname} — ${u._id}</option>`)
+          .join("");
+
+        const saved = localStorage.getItem(storageKey);
+        if (saved) select.value = saved;
+        select.onchange = () => localStorage.setItem(storageKey, select.value);
+      }
+
+      document.getElementById("loadBtn").onclick = async () => {
+        const id = document.getElementById("userSelect").value;
+        try {
+          const u = await api(`/api/users/${id}`);
+          document.getElementById("out").innerHTML =
+            `User: <b>${u.nickname}</b> <code>${u._id}</code><br/>
+             Available: <b>${u.balanceAvailable}</b><br/>
+             Locked: <b>${u.balanceLocked}</b><br/>
+             Updated: <span class="muted">${new Date(u.updatedAt).toLocaleString()}</span>`;
+        } catch (e) {
+          document.getElementById("out").textContent = e.message;
+        }
+      };
+
+      loadUsers().then(() => document.getElementById("loadBtn").click());
+    </script>
+  </body>
+</html>

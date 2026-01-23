@@ -1,10 +1,13 @@
 import mongoose from "mongoose";
 
-export async function connectDb() {
-  const uri = process.env.MONGO_URI;
-  if (!uri) {
-    throw new Error("MONGO_URI is required");
-  }
+export async function connectDb(mongoUri: string) {
+  mongoose.set("strictQuery", true);
+  await mongoose.connect(mongoUri, {
+    autoIndex: true,
+  });
+  return mongoose.connection;
+}
 
-  await mongoose.connect(uri);
+export function startSession() {
+  return mongoose.startSession();
 }

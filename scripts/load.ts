@@ -23,7 +23,10 @@ async function main() {
   // create users
   const users: string[] = [];
   for (let i = 0; i < BOTS; i++) {
-    const u = await axios.post(`${BASE}/api/users`, { balanceAvailable: INITIAL_BALANCE }).then(r => r.data);
+    const u = await axios.post(`${BASE}/api/users`, {
+      nickname: `bot_${i + 1}`,
+      balanceAvailable: INITIAL_BALANCE,
+    }).then(r => r.data);
     users.push(u._id);
   }
   console.log("[load] created users:", users.length);
